@@ -1,0 +1,4 @@
+__pycache__/
+/library.db
+/library.db-shm
+/library.db-wal

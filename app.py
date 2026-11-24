@@ -72,9 +72,43 @@ def optional_module(name: str) -> tuple[Any | None, str | None]:
 def dataframe_from(database: Any, function_name: str) -> pd.DataFrame:
     function = getattr(database, function_name)
     value = function()
-    if not isinstance(value, pd.DataFrame):
-        raise TypeError(f"database.{function_name}() must return a pandas DataFrame.")
-    return value
+    if isinstance(value, pd.DataFrame):
+        return value
+    if isinstance(value, list) and all(isinstance(row, dict) for row in value):
+        if value:
+            return pd.DataFrame.from_records(value)
+        columns = {
+            "get_students": [
+                "student_id",
+                "name",
+                "email",
+                "interests",
+                "registered",
+                "eligible",
+            ],
+            "get_books": [
+                "book_id",
+                "title",
+                "author",
+                "category",
+                "total_copies",
+                "available_copies",
+            ],
+            "get_loans": [
+                "loan_id",
+                "student_id",
+                "book_id",
+                "issued_at",
+                "due_at",
+                "returned_at",
+                "status",
+            ],
+        }.get(function_name)
+        if columns is not None:
+            return pd.DataFrame(columns=columns)
+    raise TypeError(
+        f"database.{function_name}() must return a DataFrame or a list of row dictionaries."
+    )
 
 
 def render_integration_status() -> None:
@@ -120,8 +154,11 @@ def render_dashboard(database: Any | None, database_error: str | None) -> None:
 
 def render_management(database: Any | None) -> None:
     st.title("Student and Book Management")
+    notice = st.session_state.pop("management_notice", None)
+    if notice:
+        st.success(notice)
     if database is None:
-        st.info("Add Member 1's database.py and library_operations.py to enable catalog management.")
+        st.info("Library database is unavailable; check the initialization status.")
         return
     tabs = st.tabs(["Students", "Books"])
     for tab, getter in zip(tabs, ("get_students", "get_books")):
@@ -150,7 +187,10 @@ def render_management(database: Any | None) -> None:
             else:
                 try:
                     result = operations.add_student(name.strip(), email.strip(), interests)
-                    st.success(str(result) if result is not None else "Student added.")
+                    st.session_state["management_notice"] = (
+                        f"Student added: {result['student_id']}"
+                    )
+                    st.rerun()
                 except (AttributeError, KeyError, OSError, RuntimeError, TypeError, ValueError, sqlite3.Error) as error:
                     st.error(f"Could not add student: {error}")
     with book_tab:
@@ -168,7 +208,10 @@ def render_management(database: Any | None) -> None:
                     result = operations.add_book(
                         title.strip(), author.strip(), category.strip(), int(total_copies)
                     )
-                    st.success(str(result) if result is not None else "Book added.")
+                    st.session_state["management_notice"] = (
+                        f"Book added: {result['book_id']}"
+                    )
+                    st.rerun()
                 except (AttributeError, KeyError, OSError, RuntimeError, TypeError, ValueError, sqlite3.Error) as error:
                     st.error(f"Could not add book: {error}")
 

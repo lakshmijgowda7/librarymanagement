@@ -5,30 +5,30 @@ College PBL project for Discrete Structures for Computing (UE25CS2301).
 ## Architecture and ownership
 
 - `app.py` owns Streamlit navigation, presentation, input validation at the UI boundary, and composition only.
-- `database.py` and `library_operations.py` belong to Member 1. Keep schema, database access, and circulation rules there.
+- `database.py` and `library_management.py` own persistence and circulation rules; `library_operations.py` adapts those methods to the Streamlit forms.
 - Member 2 owns `logic_module.py`, `counting_module.py`, `relations_module.py`, `recurrence_module.py`, and `graph_module.py`.
 - `ai_recommendation.py` owns the explainable category-scoring demo.
 - `optimization_module.py` owns the Unit 6 objective, exact derivatives, constrained allocation example, and gradient-descent experiment.
 
-The app starts when the database files are absent and reports the missing integrations. Do not copy business logic into `app.py`; agree on these interfaces and adapt the owning module if its implementation uses different internal names.
+The app creates its SQLite database on first launch and reports initialization errors in the sidebar. Do not copy business logic into `app.py`; keep persistence and circulation rules in their owning modules.
 
 ## Integration contract
 
-Every function below should return values (not print output). Database collection functions return `pandas.DataFrame`. `init_db()` creates/opens the shared SQLite schema and can raise an exception if initialization fails.
+Every function below should return values (not print output). Database collection functions return lists of row dictionaries; `app.py` converts them to DataFrames for display. `init_db()` creates/opens the SQLite schema and can raise an exception if initialization fails.
 
 ```python
 # database.py — Member 1
 init_db() -> None
-get_students() -> pandas.DataFrame  # columns include student_id and name
-get_books() -> pandas.DataFrame     # book_id, title, category, available_copies
-get_loans() -> pandas.DataFrame    # loan_id, student_id, book_id, status
+get_students() -> list[dict]  # student_id, name, email, interests, registered, eligible
+get_books() -> list[dict]     # book_id, title, author, category, total_copies, available_copies
+get_loans() -> list[dict]     # loan_id, student_id, book_id, issued_at, due_at, status
 
-# library_operations.py — Member 1; each returns a useful value or None
-add_student(name: str, email: str, interests: list[str])
-add_book(title: str, author: str, category: str, total_copies: int)
-issue_book(student_id: str, book_id: str)
-return_book(loan_id: str)
-reserve_book(student_id: str, book_id: str)
+# library_operations.py — app-facing adapter; each action returns its saved record
+add_student(name: str, email: str, interests: list[str]) -> dict
+add_book(title: str, author: str, category: str, total_copies: int) -> dict
+issue_book(student_id: str, book_id: str) -> dict
+return_book(loan_id: str) -> dict
+reserve_book(student_id: str, book_id: str) -> dict
 
 # Member 2 — functions available on `feature/math-modules`
 logic_module.generate_truth_table() -> list[dict[str, bool]]  # 16 eligibility rows
@@ -47,7 +47,9 @@ graph_module.build_library_graph(books, students, records) -> networkx.DiGraph
 graph_module.analyze_graph(graph) -> dict
 ```
 
-The shared branch includes `logic_module.py` and `library_management.py`. The logic page displays the fixed 16-row issue-eligibility truth table. Database-backed screens remain disabled until `database.py` and an agreed `library_operations.py` interface are integrated. `library_management.py` currently wraps database operations with mapping-based arguments, so align it with the UI contract above (or update the UI and contract together) before connecting those screens. The other mathematical pages use the functions listed above; relations inputs are passed as string labels, and graph inputs are converted to `books`, `students`, and borrowing `records`.
+`database.py` supplies the SQLite persistence layer used by `library_management.py`; `library_operations.py` adapts its business methods to the Streamlit forms. Issue, return, and reservation updates run in SQLite write transactions, and reservation order is enforced when a copy becomes available. The logic page displays the fixed 16-row issue-eligibility truth table. The other mathematical pages use the functions listed above; relations inputs are passed as string labels, and graph inputs are converted to `books`, `students`, and borrowing `records`.
+
+The database defaults to `.librarymanagement/library.db` in the user's home directory. Set `LIBRARY_DB_PATH` to choose another local file, and do not commit the database file. Each developer's local SQLite file is separate; Git synchronizes code, not live data. Sharing records across different computers requires a hosted database/service rather than a database file in Git.
 
 ## Recommendation model
 
@@ -87,7 +89,8 @@ py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-python -m py_compile app.py ai_recommendation.py optimization_module.py counting_module.py relations_module.py recurrence_module.py graph_module.py
+python -m py_compile app.py database.py library_management.py library_operations.py ai_recommendation.py optimization_module.py counting_module.py relations_module.py recurrence_module.py graph_module.py
+python -m unittest discover -v
 python -m streamlit run app.py
 ```
 
@@ -95,7 +98,8 @@ If PowerShell blocks activation, use the venv interpreter directly:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m py_compile app.py ai_recommendation.py optimization_module.py counting_module.py relations_module.py recurrence_module.py graph_module.py
+.\.venv\Scripts\python.exe -m py_compile app.py database.py library_management.py library_operations.py ai_recommendation.py optimization_module.py counting_module.py relations_module.py recurrence_module.py graph_module.py
+.\.venv\Scripts\python.exe -m unittest discover -v
 .\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
